@@ -63,11 +63,40 @@ def run_data_preprocessing(config: Config, args=None):
     
     # Load datasets with appropriate sample size
     max_samples = args.max_samples if hasattr(args, 'max_samples') and args.max_samples else None
+    
     if max_samples is None:
-        max_samples = 1000  # Default reasonable limit for full dataset
-        print(f"Loading dataset (max {max_samples} samples per language)...")
+        print("\n" + "="*50)
+        print("DATASET SIZE SELECTION")
+        print("="*50)
+        print("1. Use ENTIRE BHSig260 dataset (~400 signatures)")
+        print("2. Use limited dataset (1000 samples per language)")
+        print("3. Custom number of samples")
+        print("="*50)
+        
+        choice = input("Enter your choice (1/2/3, default=1): ").strip()
+        
+        if choice == "1" or choice == "":
+            max_samples = None  # No limit - entire dataset
+            print("\n✓ Loading ENTIRE BHSig260 dataset (all available signatures)...")
+        elif choice == "2":
+            max_samples = 1000  # Limited dataset
+            print(f"\n✓ Loading limited dataset (max {max_samples} samples per language)...")
+        elif choice == "3":
+            try:
+                max_samples = int(input("Enter number of samples per language: "))
+                print(f"\n✓ Loading dataset (max {max_samples} samples per language)...")
+            except ValueError:
+                max_samples = 1000
+                print(f"\n✓ Invalid input, using default: {max_samples} samples per language...")
+        else:
+            max_samples = None  # Default to entire dataset
+            print("\n✓ Loading ENTIRE BHSig260 dataset (all available signatures)...")
     else:
-        print(f"Loading dataset (limited to {max_samples} samples)...")
+        if max_samples == 0:
+            max_samples = None  # 0 means no limit
+            print("✓ Loading ENTIRE dataset (all available signatures)...")
+        else:
+            print(f"✓ Loading dataset (limited to {max_samples} samples)...")
     
     dataset.load_both_datasets(max_samples=max_samples)
     
@@ -317,7 +346,7 @@ def main():
     parser.add_argument('--skip-preprocessing', action='store_true', 
                        help='Skip data preprocessing (use existing data)')
     parser.add_argument('--max-samples', type=int, default=None, 
-                       help='Maximum number of samples to load (None for all)')
+                       help='Maximum number of samples to load (0 for entire dataset, None for interactive choice)')
     parser.add_argument('--small-dataset', action='store_true',
                        help='Use small dataset (subjects 1-5 only)')
     
@@ -325,6 +354,12 @@ def main():
     
     print("HANDWRITTEN SIGNATURE VERIFICATION SYSTEM")
     print("Based on 'Advancing Handwritten Signature Verification Through Deep Learning'")
+    print("=" * 80)
+    print("\n📊 BHSig260 Dataset Information:")
+    print("   • Bengali signatures: ~200 samples")
+    print("   • Hindi signatures: ~200 samples") 
+    print("   • Total: ~400 signatures")
+    print("   • Memory usage: ~200-300 MB")
     print("=" * 80)
     
     # Setup environment
