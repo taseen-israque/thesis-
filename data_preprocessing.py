@@ -157,15 +157,16 @@ class BHSig260Dataset:
         self.labels = []
         self.metadata = []
         
-    def load_dataset(self, dataset_path: str, language: str) -> None:
+    def load_dataset(self, dataset_path: str, language: str, max_samples: int = 5) -> None:
         """
         Load BHSig260 dataset from the specified path
         
         Args:
             dataset_path: Path to the dataset directory
             language: Language identifier ('Bengali' or 'Hindi')
+            max_samples: Maximum number of samples to load (default: 5)
         """
-        print(f"Loading {language} dataset from {dataset_path}")
+        print(f"Loading {language} dataset from {dataset_path} (limited to {max_samples} samples)")
         
         if not os.path.exists(dataset_path):
             print(f"Dataset path {dataset_path} does not exist!")
@@ -175,7 +176,12 @@ class BHSig260Dataset:
         person_dirs = [d for d in os.listdir(dataset_path) 
                       if os.path.isdir(os.path.join(dataset_path, d))]
         
+        sample_count = 0
+        
         for person_dir in tqdm(person_dirs, desc=f"Loading {language} signatures"):
+            if sample_count >= max_samples:
+                break
+                
             person_path = os.path.join(dataset_path, person_dir)
             
             # Get all signature files for this person
@@ -183,6 +189,9 @@ class BHSig260Dataset:
                              if f.endswith('.tif')]
             
             for filename in signature_files:
+                if sample_count >= max_samples:
+                    break
+                    
                 file_path = os.path.join(person_path, filename)
                 
                 # Parse filename to get metadata
@@ -203,18 +212,22 @@ class BHSig260Dataset:
                         self.data.append(processed_image)
                         self.labels.append(label)
                         self.metadata.append(metadata)
+                        sample_count += 1
+                        
+                        if sample_count >= max_samples:
+                            break
         
-        print(f"Loaded {len(self.data)} {language} signatures")
+        print(f"Loaded {len(self.data)} {language} signatures (limited to {max_samples})")
     
-    def load_both_datasets(self) -> None:
+    def load_both_datasets(self, max_samples: int = 5) -> None:
         """Load both Bengali and Hindi datasets"""
         # Load Bengali dataset
         if os.path.exists(self.config.BENGALI_DATASET_PATH):
-            self.load_dataset(self.config.BENGALI_DATASET_PATH, 'Bengali')
+            self.load_dataset(self.config.BENGALI_DATASET_PATH, 'Bengali', max_samples)
         
         # Load Hindi dataset (if available)
         if os.path.exists(self.config.HINDI_DATASET_PATH):
-            self.load_dataset(self.config.HINDI_DATASET_PATH, 'Hindi')
+            self.load_dataset(self.config.HINDI_DATASET_PATH, 'Hindi', max_samples)
         
         print(f"Total signatures loaded: {len(self.data)}")
         print(f"Genuine signatures: {sum(1 for label in self.labels if label == 0)}")
