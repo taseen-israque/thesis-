@@ -30,6 +30,7 @@ class Config:
     LEARNING_RATE = 0.001
     VALIDATION_SPLIT = 0.2
     TEST_SPLIT = 0.1
+    EARLY_STOPPING_PATIENCE = 10  # Number of epochs to wait before early stopping
     
     # Model parameters
     NUM_CLASSES = 2  # Genuine vs Forged
