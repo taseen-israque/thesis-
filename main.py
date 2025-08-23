@@ -13,8 +13,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from config import Config
-from data_preprocessing import BHSig260Dataset
-from trainer import SignatureTrainer, YOLOv5Trainer
+from data_preprocessing import BHSig260Dataset, BatchDataLoader
+from trainer import SignatureTrainer
 from inference import SignatureVerificationAPI, visualize_verification_results
 
 def setup_environment():
@@ -53,7 +53,7 @@ def setup_environment():
     return True
 
 def run_data_preprocessing(config: Config, args=None):
-    """Run data preprocessing pipeline"""
+    """Run data preprocessing pipeline with batch processing"""
     print("\n" + "="*60)
     print("DATA PREPROCESSING")
     print("="*60)
@@ -61,44 +61,9 @@ def run_data_preprocessing(config: Config, args=None):
     # Initialize dataset
     dataset = BHSig260Dataset(config)
     
-    # Load datasets with appropriate sample size
-    max_samples = args.max_samples if hasattr(args, 'max_samples') and args.max_samples else None
-    
-    if max_samples is None:
-        print("\n" + "="*50)
-        print("DATASET SIZE SELECTION")
-        print("="*50)
-        print("1. Use ENTIRE BHSig260 dataset (~400 signatures)")
-        print("2. Use limited dataset (1000 samples per language)")
-        print("3. Custom number of samples")
-        print("="*50)
-        
-        choice = input("Enter your choice (1/2/3, default=1): ").strip()
-        
-        if choice == "1" or choice == "":
-            max_samples = None  # No limit - entire dataset
-            print("\n✓ Loading ENTIRE BHSig260 dataset (all available signatures)...")
-        elif choice == "2":
-            max_samples = 1000  # Limited dataset
-            print(f"\n✓ Loading limited dataset (max {max_samples} samples per language)...")
-        elif choice == "3":
-            try:
-                max_samples = int(input("Enter number of samples per language: "))
-                print(f"\n✓ Loading dataset (max {max_samples} samples per language)...")
-            except ValueError:
-                max_samples = 1000
-                print(f"\n✓ Invalid input, using default: {max_samples} samples per language...")
-        else:
-            max_samples = None  # Default to entire dataset
-            print("\n✓ Loading ENTIRE BHSig260 dataset (all available signatures)...")
-    else:
-        if max_samples == 0:
-            max_samples = None  # 0 means no limit
-            print("✓ Loading ENTIRE dataset (all available signatures)...")
-        else:
-            print(f"✓ Loading dataset (limited to {max_samples} samples)...")
-    
-    dataset.load_both_datasets(max_samples=max_samples)
+    # Load entire dataset without size limitations
+    print("Loading entire BHSig260 dataset for batch processing...")
+    dataset.load_both_datasets()
     
     if not dataset.data:
         print("No data loaded. Please check dataset paths.")
@@ -108,9 +73,9 @@ def run_data_preprocessing(config: Config, args=None):
     print(f"Genuine: {sum(1 for label in dataset.labels if label == 0)}")
     print(f"Forged: {sum(1 for label in dataset.labels if label == 1)}")
     
-    # Filter for small dataset if requested
+    # Filter for small dataset if requested (for development/testing)
     if hasattr(args, 'small_dataset') and args.small_dataset:
-        print("\nFiltering for subjects 1-5...")
+        print("\nFiltering for subjects 1-5 (development mode)...")
         small_subjects = list(range(1, 6))
         filtered_indices = []
         
@@ -151,21 +116,40 @@ def run_data_preprocessing(config: Config, args=None):
     print(f"  Validation: {X_val.shape[0]} samples")
     print(f"  Test: {X_test.shape[0]} samples")
     
-    return X_train_aug, X_val, X_test, y_train_aug, y_val, y_test
+    # Create batch data loaders
+    batch_size = getattr(config, 'BATCH_SIZE', 32)
+    num_workers = getattr(config, 'NUM_WORKERS', 4)
+    
+    batch_loader = BatchDataLoader(config, batch_size=batch_size, num_workers=num_workers)
+    train_loader, val_loader, test_loader = batch_loader.create_data_loaders(
+        X_train_aug, X_val, X_test, y_train_aug, y_val, y_test
+    )
+    
+    # Print batch statistics
+    train_stats = batch_loader.get_batch_stats(train_loader)
+    val_stats = batch_loader.get_batch_stats(val_loader)
+    test_stats = batch_loader.get_batch_stats(test_loader)
+    
+    print(f"\nBatch Statistics:")
+    print(f"  Training: {train_stats['total_batches']} batches, {train_stats['total_samples']} samples")
+    print(f"  Validation: {val_stats['total_batches']} batches, {val_stats['total_samples']} samples")
+    print(f"  Test: {test_stats['total_batches']} batches, {test_stats['total_samples']} samples")
+    
+    return train_loader, val_loader, test_loader, X_train_aug, X_val, X_test, y_train_aug, y_val, y_test
 
-def run_model_training(config: Config, X_train, X_val, X_test, y_train, y_val, y_test):
-    """Run model training pipeline"""
+def run_model_training(config: Config, train_loader, val_loader, test_loader, y_train, y_val, y_test):
+    """Run model training pipeline with batch processing"""
     print("\n" + "="*60)
     print("MODEL TRAINING")
     print("="*60)
     
     # Train deep learning models
     trainer = SignatureTrainer(config)
-    results = trainer.train_all_models(X_train, X_val, X_test, y_train, y_val, y_test)
+    results = trainer.train_all_models(train_loader, val_loader, test_loader, y_train, y_val, y_test)
     
-    # Train YOLOv5 model
-    yolo_trainer = YOLOv5Trainer(config)
-    yolo_trainer.train_yolo_model(X_train, X_val, y_train, y_val)
+    # Train YOLOv5 model (if needed)
+    # yolo_trainer = YOLOv5Trainer(config)
+    # yolo_trainer.train_yolo_model(X_train, X_val, y_train, y_val)
     
     return results
 
@@ -383,20 +367,20 @@ def main():
         if data is None:
             print("Data preprocessing failed. Exiting.")
             return
-        X_train, X_val, X_test, y_train, y_val, y_test = data
+        train_loader, val_loader, test_loader, X_train_aug, X_val, X_test, y_train_aug, y_val, y_test = data
     
     if args.mode in ['train', 'full']:
         print("\nStarting model training...")
         # If only training is requested, we need to load data first
-        if args.mode == 'train' and 'X_train' not in locals():
+        if args.mode == 'train' and 'train_loader' not in locals():
             print("Loading data for training...")
             data = run_data_preprocessing(config, args)
             if data is None:
                 print("Data loading failed. Exiting.")
                 return
-            X_train, X_val, X_test, y_train, y_val, y_test = data
+            train_loader, val_loader, test_loader, X_train_aug, X_val, X_test, y_train_aug, y_val, y_test = data
         
-        results = run_model_training(config, X_train, X_val, X_test, y_train, y_val, y_test)
+        results = run_model_training(config, train_loader, val_loader, test_loader, y_train_aug, y_val, y_test)
     
     if args.mode in ['evaluate', 'full']:
         print("\nStarting model evaluation...")

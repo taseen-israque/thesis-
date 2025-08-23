@@ -17,6 +17,10 @@ from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
+import torch
+from torch.utils.data import Dataset, DataLoader
+import torch.nn.functional as F
+
 from config import Config
 
 class SignaturePreprocessor:
@@ -157,16 +161,15 @@ class BHSig260Dataset:
         self.labels = []
         self.metadata = []
         
-    def load_dataset(self, dataset_path: str, language: str, max_samples: int = 5) -> None:
+    def load_dataset(self, dataset_path: str, language: str) -> None:
         """
-        Load BHSig260 dataset from the specified path
+        Load entire BHSig260 dataset from the specified path
         
         Args:
             dataset_path: Path to the dataset directory
             language: Language identifier ('Bengali' or 'Hindi')
-            max_samples: Maximum number of samples to load (default: 5)
         """
-        print(f"Loading {language} dataset from {dataset_path} (limited to {max_samples} samples)")
+        print(f"Loading entire {language} dataset from {dataset_path}")
         
         if not os.path.exists(dataset_path):
             print(f"Dataset path {dataset_path} does not exist!")
@@ -176,12 +179,7 @@ class BHSig260Dataset:
         person_dirs = [d for d in os.listdir(dataset_path) 
                       if os.path.isdir(os.path.join(dataset_path, d))]
         
-        sample_count = 0
-        
         for person_dir in tqdm(person_dirs, desc=f"Loading {language} signatures"):
-            if sample_count >= max_samples:
-                break
-                
             person_path = os.path.join(dataset_path, person_dir)
             
             # Get all signature files for this person
@@ -189,9 +187,6 @@ class BHSig260Dataset:
                              if f.endswith('.tif')]
             
             for filename in signature_files:
-                if sample_count >= max_samples:
-                    break
-                    
                 file_path = os.path.join(person_path, filename)
                 
                 # Parse filename to get metadata
@@ -212,22 +207,18 @@ class BHSig260Dataset:
                         self.data.append(processed_image)
                         self.labels.append(label)
                         self.metadata.append(metadata)
-                        sample_count += 1
-                        
-                        if sample_count >= max_samples:
-                            break
         
-        print(f"Loaded {len(self.data)} {language} signatures (limited to {max_samples})")
+        print(f"Loaded {len(self.data)} {language} signatures")
     
-    def load_both_datasets(self, max_samples: int = 5) -> None:
-        """Load both Bengali and Hindi datasets"""
+    def load_both_datasets(self) -> None:
+        """Load both Bengali and Hindi datasets (entire datasets)"""
         # Load Bengali dataset
         if os.path.exists(self.config.BENGALI_DATASET_PATH):
-            self.load_dataset(self.config.BENGALI_DATASET_PATH, 'Bengali', max_samples)
+            self.load_dataset(self.config.BENGALI_DATASET_PATH, 'Bengali')
         
         # Load Hindi dataset (if available)
         if os.path.exists(self.config.HINDI_DATASET_PATH):
-            self.load_dataset(self.config.HINDI_DATASET_PATH, 'Hindi', max_samples)
+            self.load_dataset(self.config.HINDI_DATASET_PATH, 'Hindi')
         
         print(f"Total signatures loaded: {len(self.data)}")
         print(f"Genuine signatures: {sum(1 for label in self.labels if label == 0)}")
@@ -345,6 +336,126 @@ class BHSig260Dataset:
         plt.savefig(os.path.join(self.config.RESULTS_DIR, 'sample_signatures.png'))
         plt.show()
 
+class SignatureDataset(Dataset):
+    """
+    PyTorch Dataset class for signature verification with batch processing
+    """
+    
+    def __init__(self, images, labels, metadata=None, transform=None):
+        self.images = images
+        self.labels = labels
+        self.metadata = metadata
+        self.transform = transform
+    
+    def __len__(self):
+        return len(self.images)
+    
+    def __getitem__(self, idx):
+        image = self.images[idx]
+        label = self.labels[idx]
+        
+        # Convert to tensor if not already
+        if not isinstance(image, torch.Tensor):
+            image = torch.from_numpy(image).float()
+        
+        # Apply transforms if provided
+        if self.transform:
+            image = self.transform(image)
+        
+        # Ensure proper shape (C, H, W) for PyTorch
+        if image.dim() == 3 and image.shape[-1] == 1:  # (H, W, C)
+            image = image.permute(2, 0, 1)  # (C, H, W)
+        
+        return image, label
+
+class BatchDataLoader:
+    """
+    Batch data loader for signature verification with memory-efficient processing
+    """
+    
+    def __init__(self, config: Config, batch_size: int = 32, num_workers: int = 4):
+        self.config = config
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.preprocessor = SignaturePreprocessor(config)
+    
+    def create_data_loaders(self, X_train, X_val, X_test, y_train, y_val, y_test):
+        """
+        Create PyTorch DataLoaders for train, validation, and test sets
+        
+        Args:
+            X_train, X_val, X_test: Training, validation, and test images
+            y_train, y_val, y_test: Corresponding labels
+            
+        Returns:
+            Tuple of (train_loader, val_loader, test_loader)
+        """
+        print(f"Creating data loaders with batch size: {self.batch_size}")
+        
+        # Create datasets
+        train_dataset = SignatureDataset(X_train, y_train)
+        val_dataset = SignatureDataset(X_val, y_val)
+        test_dataset = SignatureDataset(X_test, y_test)
+        
+        # Create data loaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            pin_memory=True if torch.cuda.is_available() else False,
+            drop_last=True  # Drop incomplete batches for consistent training
+        )
+        
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True if torch.cuda.is_available() else False
+        )
+        
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True if torch.cuda.is_available() else False
+        )
+        
+        print(f"Created data loaders:")
+        print(f"  Training batches: {len(train_loader)}")
+        print(f"  Validation batches: {len(val_loader)}")
+        print(f"  Test batches: {len(test_loader)}")
+        
+        return train_loader, val_loader, test_loader
+    
+    def get_batch_stats(self, data_loader):
+        """
+        Get statistics about batches in a data loader
+        
+        Args:
+            data_loader: PyTorch DataLoader
+            
+        Returns:
+            Dictionary with batch statistics
+        """
+        total_samples = 0
+        batch_sizes = []
+        
+        for batch_idx, (images, labels) in enumerate(data_loader):
+            batch_size = images.size(0)
+            batch_sizes.append(batch_size)
+            total_samples += batch_size
+        
+        return {
+            'total_batches': len(data_loader),
+            'total_samples': total_samples,
+            'avg_batch_size': sum(batch_sizes) / len(batch_sizes),
+            'min_batch_size': min(batch_sizes),
+            'max_batch_size': max(batch_sizes)
+        }
+
 def main():
     """Main function to test data preprocessing"""
     config = Config()
@@ -354,7 +465,7 @@ def main():
     dataset = BHSig260Dataset(config)
     
     # Load datasets
-    dataset.load_both_datasets()
+    dataset.load_both_datasets() # This method needs to be adapted to return data and metadata
     
     # Visualize samples
     dataset.visualize_samples()

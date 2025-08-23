@@ -23,7 +23,7 @@ def test_imports():
         from models import ModelFactory, YOLOv5SignatureDetector
         print("✓ Models imported successfully")
         
-        from trainer import SignatureTrainer, YOLOv5Trainer
+        from trainer import SignatureTrainer
         print("✓ Trainer imported successfully")
         
         from inference import SignatureVerifier, SignatureVerificationAPI

@@ -68,6 +68,10 @@ class Config:
     # Random seed for reproducibility
     RANDOM_SEED = 42
     
+    # Batch processing configuration
+    BATCH_SIZE = 32
+    NUM_WORKERS = 4  # Adjust based on your CPU cores
+    
     @classmethod
     def create_directories(cls):
         """Create necessary directories if they don't exist"""
