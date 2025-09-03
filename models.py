@@ -59,13 +59,24 @@ class ResNet50SignatureVerifier(nn.Module):
         super(ResNet50SignatureVerifier, self).__init__()
         self.config = config
         
-        # Load pretrained ResNet50
+        # Load pretrained ResNet50 and keep all pretrained weights
         self.resnet = models.resnet50(pretrained=True)
+        
+        # Store the original first layer weights for grayscale adaptation
+        original_first_layer = self.resnet.conv1
+        original_weights = original_first_layer.weight.data
         
         # Modify the first layer to accept grayscale images
         self.resnet.conv1 = nn.Conv2d(
             config.CHANNELS, 64, kernel_size=7, stride=2, padding=3, bias=False
         )
+        
+        # Adapt pretrained RGB weights to grayscale by averaging across channels
+        # Original: [64, 3, 7, 7] -> New: [64, 1, 7, 7]
+        with torch.no_grad():
+            # Average across RGB channels to create grayscale weights
+            grayscale_weights = original_weights.mean(dim=1, keepdim=True)
+            self.resnet.conv1.weight.data = grayscale_weights
         
         # Remove the classifier and add custom layers
         num_features = self.resnet.fc.in_features
@@ -79,6 +90,13 @@ class ResNet50SignatureVerifier(nn.Module):
             nn.Dropout(p=config.DROPOUT_RATE),
             nn.Linear(128, config.NUM_CLASSES)
         )
+        
+        # Initialize the new classifier layers with proper weight initialization
+        for module in self.resnet.fc:
+            if isinstance(module, nn.Linear):
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
         
     def forward(self, x):
         return self.resnet(x)
@@ -172,13 +190,28 @@ class VGG19SignatureVerifier(nn.Module):
         super(VGG19SignatureVerifier, self).__init__()
         self.config = config
         
-        # Load pretrained VGG19
+        # Load pretrained VGG19 and keep all pretrained weights
         self.vgg = models.vgg19(pretrained=True)
+        
+        # Store the original first layer weights for grayscale adaptation
+        original_first_layer = self.vgg.features[0]
+        original_weights = original_first_layer.weight.data
         
         # Modify the first layer to accept grayscale images
         self.vgg.features[0] = nn.Conv2d(
             config.CHANNELS, 64, kernel_size=3, padding=1
         )
+        
+        # Adapt pretrained RGB weights to grayscale by averaging across channels
+        # Original: [64, 3, 3, 3] -> New: [64, 1, 3, 3]
+        with torch.no_grad():
+            # Average across RGB channels to create grayscale weights
+            grayscale_weights = original_weights.mean(dim=1, keepdim=True)
+            self.vgg.features[0].weight.data = grayscale_weights
+            
+            # Copy bias if it exists
+            if hasattr(original_first_layer, 'bias') and original_first_layer.bias is not None:
+                self.vgg.features[0].bias.data = original_first_layer.bias.data
         
         # Remove the classifier and add custom layers
         num_features = self.vgg.classifier[6].in_features
@@ -192,6 +225,13 @@ class VGG19SignatureVerifier(nn.Module):
             nn.Dropout(p=config.DROPOUT_RATE),
             nn.Linear(128, config.NUM_CLASSES)
         )
+        
+        # Initialize the new classifier layers with proper weight initialization
+        for module in self.vgg.classifier[6]:
+            if isinstance(module, nn.Linear):
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
         
     def forward(self, x):
         return self.vgg(x)

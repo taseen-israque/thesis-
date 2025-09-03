@@ -357,6 +357,7 @@ class SignatureTrainer:
         
         # Determine which models to train
         model_list = getattr(self.config, 'TRAIN_MODELS', ['mobilenet', 'resnet50', 'vgg19', 'inceptionv3'])
+        print(f"Training order: {model_list}")
         
         # Train each model
         for model_name in model_list:
@@ -394,6 +395,69 @@ class SignatureTrainer:
             print(f"  Test Precision: {test_precision:.4f}")
             print(f"  Test Recall: {test_recall:.4f}")
             print(f"  Test F1-Score: {test_f1:.4f}")
+        
+        # Train ensemble model using the trained individual models
+        print(f"\n{'='*50}")
+        print("Training ENSEMBLE model")
+        print(f"{'='*50}")
+        
+        try:
+            # Create ensemble model
+            ensemble_model = ModelFactory.create_model('ensemble', self.config)
+            
+            # Load trained weights into ensemble's individual models
+            for model_name in model_list:
+                if model_name in results:
+                    # Get the trained model from results
+                    trained_individual_model = results[model_name]['model']
+                    
+                    # Load weights into ensemble's corresponding model
+                    if model_name == 'resnet50':
+                        ensemble_model.resnet50.load_state_dict(trained_individual_model.state_dict())
+                    elif model_name == 'vgg19':
+                        ensemble_model.vgg19.load_state_dict(trained_individual_model.state_dict())
+                    elif model_name == 'inceptionv3':
+                        ensemble_model.inceptionv3.load_state_dict(trained_individual_model.state_dict())
+                    
+                    print(f"Loaded trained weights for {model_name} into ensemble")
+            
+            # Freeze individual model weights in ensemble
+            for param in ensemble_model.resnet50.parameters():
+                param.requires_grad = False
+            for param in ensemble_model.vgg19.parameters():
+                param.requires_grad = False
+            for param in ensemble_model.inceptionv3.parameters():
+                param.requires_grad = False
+            
+            # Train ensemble
+            trained_ensemble = self.train_model_with_loaders(
+                ensemble_model, train_loader, val_loader, 'ensemble'
+            )
+            
+            # Evaluate ensemble
+            ensemble_evaluation = self.evaluate_model(
+                trained_ensemble, test_loader, 'ensemble'
+            )
+            
+            # Store ensemble results
+            results['ensemble'] = {
+                'accuracy': ensemble_evaluation['accuracy'],
+                'precision': ensemble_evaluation['precision'],
+                'recall': ensemble_evaluation['recall'],
+                'f1_score': ensemble_evaluation['f1_score'],
+                'model': trained_ensemble
+            }
+            
+            print(f"ENSEMBLE Results:")
+            print(f"  Test Accuracy: {ensemble_evaluation['accuracy']:.4f}")
+            print(f"  Test Precision: {ensemble_evaluation['precision']:.4f}")
+            print(f"  Test Recall: {ensemble_evaluation['recall']:.4f}")
+            print(f"  Test F1-Score: {ensemble_evaluation['f1_score']:.4f}")
+            
+        except Exception as e:
+            print(f"Error training ensemble model: {e}")
+            import traceback
+            traceback.print_exc()
         
         return results
     
