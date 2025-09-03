@@ -96,7 +96,21 @@ class SignatureTrainer:
         model = model.to(self.device)
         
         # Loss function and optimizer
-        criterion = nn.CrossEntropyLoss()
+        # Use class-balanced loss for imbalanced datasets
+        if model_name in ['vgg19', 'resnet50']:
+            # Calculate class weights based on dataset distribution
+            # This gives more importance to the minority class (genuine signatures)
+            class_counts = torch.bincount(train_labels)
+            total_samples = len(train_labels)
+            class_weights = total_samples / (len(class_counts) * class_counts.float())
+            class_weights = class_weights / class_weights.sum() * len(class_counts)  # Normalize
+            
+            print(f"Class counts for {model_name}: {class_counts}")
+            print(f"Class weights for {model_name}: {class_weights}")
+            criterion = nn.CrossEntropyLoss(weight=class_weights)
+        else:
+            criterion = nn.CrossEntropyLoss()
+            
         optimizer = optim.Adam(
             model.parameters(), 
             lr=self.config.LEARNING_RATE,
@@ -132,7 +146,13 @@ class SignatureTrainer:
                 optimizer.zero_grad()
                 output = model(data)
                 loss = criterion(output, target)
+                
+                # Backward pass and optimization
                 loss.backward()
+                
+                # Gradient clipping to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
                 optimizer.step()
                 
                 train_loss += loss.item()
@@ -416,10 +436,19 @@ class SignatureTrainer:
                         ensemble_model.resnet50.load_state_dict(trained_individual_model.state_dict())
                     elif model_name == 'vgg19':
                         ensemble_model.vgg19.load_state_dict(trained_individual_model.state_dict())
-                    elif model_name == 'inceptionv3':
-                        ensemble_model.inceptionv3.load_state_dict(trained_individual_model.state_dict())
                     
                     print(f"Loaded trained weights for {model_name} into ensemble")
+            
+            # Load pre-trained InceptionV3 weights (since it's already trained)
+            inception_model_path = os.path.join(self.config.MODELS_DIR, 'inceptionv3_best.pth')
+            if os.path.exists(inception_model_path):
+                print("Loading pre-trained InceptionV3 weights for ensemble")
+                inception_state_dict = torch.load(inception_model_path, map_location=self.device)
+                ensemble_model.inceptionv3.load_state_dict(inception_state_dict)
+            else:
+                print("Warning: InceptionV3 model file not found. Training InceptionV3 from scratch in ensemble.")
+                # If no pre-trained weights, we'll need to train InceptionV3 as part of ensemble
+                # This is a fallback option
             
             # Freeze individual model weights in ensemble
             for param in ensemble_model.resnet50.parameters():
@@ -479,7 +508,16 @@ class SignatureTrainer:
         
         # Loss function and optimizer
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=self.config.LEARNING_RATE)
+        
+        # Use custom learning rate if available for this model
+        if hasattr(self.config, 'MODEL_LEARNING_RATES') and model_name in self.config.MODEL_LEARNING_RATES:
+            lr = self.config.MODEL_LEARNING_RATES[model_name]
+            print(f"Using custom learning rate for {model_name}: {lr}")
+        else:
+            lr = self.config.LEARNING_RATE
+            print(f"Using default learning rate for {model_name}: {lr}")
+        
+        optimizer = optim.Adam(model.parameters(), lr=lr)
         
         # Learning rate scheduler
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -504,7 +542,13 @@ class SignatureTrainer:
                 optimizer.zero_grad()
                 outputs = model(images)
                 loss = criterion(outputs, labels)
+                
+                # Backward pass and optimization
                 loss.backward()
+                
+                # Gradient clipping to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
                 optimizer.step()
                 
                 train_loss += loss.item()

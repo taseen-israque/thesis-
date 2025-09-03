@@ -81,13 +81,18 @@ class ResNet50SignatureVerifier(nn.Module):
         # Remove the classifier and add custom layers
         num_features = self.resnet.fc.in_features
         self.resnet.fc = nn.Sequential(
-            nn.Dropout(p=config.DROPOUT_RATE),
-            nn.Linear(num_features, 512),
+            nn.Linear(num_features, 1024),  # Larger intermediate layer
+            nn.BatchNorm1d(1024),          # Add batch normalization
             nn.ReLU(),
-            nn.Dropout(p=config.DROPOUT_RATE),
+            nn.Dropout(p=0.3),             # Reduce dropout for better training
+            nn.Linear(1024, 512),
+            nn.BatchNorm1d(512),           # Add batch normalization
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
             nn.Linear(512, 128),
+            nn.BatchNorm1d(128),           # Add batch normalization
             nn.ReLU(),
-            nn.Dropout(p=config.DROPOUT_RATE),
+            nn.Dropout(p=0.3),
             nn.Linear(128, config.NUM_CLASSES)
         )
         
@@ -97,6 +102,9 @@ class ResNet50SignatureVerifier(nn.Module):
                 nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.BatchNorm1d):
+                nn.init.constant_(module.weight, 1)
+                nn.init.constant_(module.bias, 0)
         
     def forward(self, x):
         return self.resnet(x)
@@ -213,25 +221,34 @@ class VGG19SignatureVerifier(nn.Module):
             if hasattr(original_first_layer, 'bias') and original_first_layer.bias is not None:
                 self.vgg.features[0].bias.data = original_first_layer.bias.data
         
-        # Remove the classifier and add custom layers
+        # Remove the classifier and add custom layers with better architecture
         num_features = self.vgg.classifier[6].in_features
         self.vgg.classifier[6] = nn.Sequential(
-            nn.Dropout(p=config.DROPOUT_RATE),
-            nn.Linear(num_features, 512),
+            nn.Linear(num_features, 512),  # Reduced from 1024 to prevent overfitting
+            nn.BatchNorm1d(512),
             nn.ReLU(),
-            nn.Dropout(p=config.DROPOUT_RATE),
-            nn.Linear(512, 128),
+            nn.Dropout(p=0.2),             # Reduced dropout
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Dropout(p=config.DROPOUT_RATE),
-            nn.Linear(128, config.NUM_CLASSES)
+            nn.Dropout(p=0.2),
+            nn.Linear(256, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(p=0.2),
+            nn.Linear(64, config.NUM_CLASSES)
         )
         
         # Initialize the new classifier layers with proper weight initialization
         for module in self.vgg.classifier[6]:
             if isinstance(module, nn.Linear):
-                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                # Use Xavier initialization for better training stability
+                nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.BatchNorm1d):
+                nn.init.constant_(module.weight, 1)
+                nn.init.constant_(module.bias, 0)
         
     def forward(self, x):
         return self.vgg(x)

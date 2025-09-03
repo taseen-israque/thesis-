@@ -32,25 +32,33 @@ class Config:
     TEST_SPLIT = 0.1
     EARLY_STOPPING_PATIENCE = 10  # Number of epochs to wait before early stopping
     
+    # Custom learning rates for specific models (lower for pretrained models)
+    MODEL_LEARNING_RATES = {
+        'vgg19': 0.0001,      # Lower LR for VGG19 (pretrained weights)
+        'resnet50': 0.0001,   # Lower LR for ResNet50 (pretrained weights)
+        'inceptionv3': 0.001, # Default LR for InceptionV3
+        'ensemble': 0.001     # Default LR for ensemble
+    }
+    
     # Model parameters
     NUM_CLASSES = 2  # Genuine vs Forged
     DROPOUT_RATE = 0.5
     WEIGHT_DECAY = 1e-4
     
-    # Models to train (order matters). Exclude MobileNet in full mode.
-    TRAIN_MODELS = ['inceptionv3', 'vgg19', 'resnet50']
+    # Training order - exclude InceptionV3 since it's already trained
+    TRAIN_MODELS = ['vgg19', 'resnet50']  # Only train VGG19 and ResNet50
     
     # Ensemble weights
     ENSEMBLE_WEIGHTS = {
         'resnet50': 0.4,
-        'inceptionv3': 0.3,
-        'vgg19': 0.3
+        'inceptionv3': 0.4,
+        'vgg19': 0.2
     }
     
     # YOLOv5 parameters
     YOLO_IMG_SIZE = 640
     YOLO_BATCH_SIZE = 16
-    YOLO_EPOCHS = 50
+    YOLO_EPOCHS = 100
     
     # MobileNet parameters
     MOBILENET_ALPHA = 1.0

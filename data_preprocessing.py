@@ -20,6 +20,7 @@ warnings.filterwarnings('ignore')
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
+from torchvision import transforms
 
 from config import Config
 
@@ -392,10 +393,25 @@ class BatchDataLoader:
         """
         print(f"Creating data loaders with batch size: {self.batch_size}")
         
-        # Create datasets
-        train_dataset = SignatureDataset(X_train, y_train)
-        val_dataset = SignatureDataset(X_val, y_val)
-        test_dataset = SignatureDataset(X_test, y_test)
+        # Data augmentation for training
+        train_transform = transforms.Compose([
+            transforms.RandomRotation(degrees=15),  # Increased rotation
+            transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),  # Added affine transforms
+            transforms.ColorJitter(brightness=0.2, contrast=0.2),  # Added color jittering
+            transforms.RandomHorizontalFlip(p=0.5),  # Added horizontal flip
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5])
+        ])
+        
+        val_test_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5])
+        ])
+        
+        # Create datasets with appropriate transforms
+        train_dataset = SignatureDataset(X_train, y_train, transform=train_transform)
+        val_dataset = SignatureDataset(X_val, y_val, transform=val_test_transform)
+        test_dataset = SignatureDataset(X_test, y_test, transform=val_test_transform)
         
         # Create data loaders
         train_loader = DataLoader(
