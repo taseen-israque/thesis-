@@ -26,7 +26,7 @@ class Config:
     
     # Training parameters
     BATCH_SIZE = 32
-    EPOCHS = 20
+    EPOCHS = 4
     LEARNING_RATE = 0.001
     VALIDATION_SPLIT = 0.2
     TEST_SPLIT = 0.1
@@ -38,7 +38,7 @@ class Config:
     WEIGHT_DECAY = 1e-4
     
     # Models to train (order matters). Exclude MobileNet in full mode.
-    TRAIN_MODELS = ['resnet50', 'inceptionv3', 'vgg19']
+    TRAIN_MODELS = ['inceptionv3', 'vgg19', 'resnet50']
     
     # Ensemble weights
     ENSEMBLE_WEIGHTS = {
