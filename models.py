@@ -156,12 +156,8 @@ class InceptionV3SignatureVerifier(nn.Module):
                         new_layers[i].bias.data = pretrained_layers[i].bias.data
         
     def forward(self, x):
-        # Ensure model is in eval mode for inference
-        self.inception.eval()
-        
-        # Forward pass through InceptionV3 (returns tuple with aux_logits=True)
-        with torch.no_grad():
-            output = self.inception(x)
+        # Remove eval() and torch.no_grad() to allow proper training
+        output = self.inception(x)
         
         if isinstance(output, tuple):
             return output[0]  # Return main output, ignore aux output

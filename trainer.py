@@ -355,8 +355,11 @@ class SignatureTrainer:
         
         # Model factory uses static methods
         
+        # Determine which models to train
+        model_list = getattr(self.config, 'TRAIN_MODELS', ['mobilenet', 'resnet50', 'vgg19', 'inceptionv3'])
+        
         # Train each model
-        for model_name in ['mobilenet', 'resnet50', 'vgg19', 'inceptionv3']:
+        for model_name in model_list:
             print(f"\n{'='*50}")
             print(f"Training {model_name.upper()} model")
             print(f"{'='*50}")

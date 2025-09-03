@@ -13,7 +13,7 @@ class Config:
     HINDI_DATASET_PATH = os.path.join(DATASET_ROOT, "BHSig260-Hindi", "BHSig260-Hindi")
     
     # Image preprocessing parameters
-    IMAGE_SIZE = (224, 224)  # Standard size for deep learning models
+    IMAGE_SIZE = (299, 299)  # Standard size for InceptionV3 (minimum required)
     CHANNELS = 1  # Grayscale images
     NORMALIZATION_FACTOR = 255.0  # For pixel value normalization
     
@@ -36,6 +36,9 @@ class Config:
     NUM_CLASSES = 2  # Genuine vs Forged
     DROPOUT_RATE = 0.5
     WEIGHT_DECAY = 1e-4
+    
+    # Models to train (order matters). Exclude MobileNet in full mode.
+    TRAIN_MODELS = ['resnet50', 'inceptionv3', 'vgg19']
     
     # Ensemble weights
     ENSEMBLE_WEIGHTS = {
