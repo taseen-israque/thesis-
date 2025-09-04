@@ -355,9 +355,13 @@ class SignatureDataset(Dataset):
         image = self.images[idx]
         label = self.labels[idx]
         
-        # Convert to tensor if not already
-        if not isinstance(image, torch.Tensor):
-            image = torch.from_numpy(image).float()
+        # Convert numpy array to PIL Image for transforms
+        if isinstance(image, np.ndarray):
+            # Ensure image is in the right format (H, W) for grayscale
+            if len(image.shape) == 3 and image.shape[-1] == 1:
+                image = image.squeeze(-1)  # Remove channel dimension
+            # Convert to PIL Image
+            image = Image.fromarray((image * 255).astype(np.uint8), mode='L')
         
         # Apply transforms if provided
         if self.transform:
@@ -397,7 +401,7 @@ class BatchDataLoader:
         train_transform = transforms.Compose([
             transforms.RandomRotation(degrees=15),  # Increased rotation
             transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),  # Added affine transforms
-            transforms.ColorJitter(brightness=0.2, contrast=0.2),  # Added color jittering
+            # Note: ColorJitter removed for grayscale images - not compatible
             transforms.RandomHorizontalFlip(p=0.5),  # Added horizontal flip
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5], std=[0.5])
