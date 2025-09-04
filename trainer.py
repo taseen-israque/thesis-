@@ -23,6 +23,28 @@ from config import Config
 from models import ModelFactory, YOLOv5SignatureDetector
 from data_preprocessing import BHSig260Dataset
 
+class FocalLoss(nn.Module):
+    """
+    Focal Loss for addressing class imbalance
+    """
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        ce_loss = nn.functional.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
+        
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
 class SignatureTrainer:
     """
     Trainer class for signature verification models
@@ -96,10 +118,20 @@ class SignatureTrainer:
         model = model.to(self.device)
         
         # Loss function and optimizer
-        # Use class-balanced loss for imbalanced datasets
-        if model_name in ['vgg19', 'resnet50']:
-            # Calculate class weights based on dataset distribution
-            # This gives more importance to the minority class (genuine signatures)
+        # Use focal loss for VGG19 to better handle class imbalance
+        if model_name == 'vgg19':
+            # Calculate class weights for focal loss
+            class_counts = torch.bincount(train_labels)
+            total_samples = len(train_labels)
+            class_weights = total_samples / (len(class_counts) * class_counts.float())
+            class_weights = class_weights / class_weights.sum() * len(class_counts)  # Normalize
+            
+            print(f"Class counts for {model_name}: {class_counts}")
+            print(f"Class weights for {model_name}: {class_weights}")
+            print(f"Using Focal Loss for {model_name} to address class imbalance")
+            criterion = FocalLoss(alpha=class_weights[1].item(), gamma=2.0)  # Focus on minority class
+        elif model_name == 'resnet50':
+            # Use class-balanced loss for ResNet50
             class_counts = torch.bincount(train_labels)
             total_samples = len(train_labels)
             class_weights = total_samples / (len(class_counts) * class_counts.float())
@@ -109,7 +141,7 @@ class SignatureTrainer:
             print(f"Class weights for {model_name}: {class_weights}")
             criterion = nn.CrossEntropyLoss(weight=class_weights)
         else:
-        criterion = nn.CrossEntropyLoss()
+            criterion = nn.CrossEntropyLoss()
             
         optimizer = optim.Adam(
             model.parameters(), 
@@ -124,6 +156,7 @@ class SignatureTrainer:
         
         # Training loop
         best_val_loss = float('inf')
+        best_val_accuracy = 0.0  # Track best validation accuracy
         patience_counter = 0
         patience = 20
         
@@ -203,14 +236,24 @@ class SignatureTrainer:
             # Learning rate scheduling
             scheduler.step(avg_val_loss)
             
-            # Early stopping
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                patience_counter = 0
-                # Save best model
-                self.save_model(model, model_name, epoch, val_accuracy)
+            # Early stopping - use accuracy for VGG19, loss for others
+            if model_name == 'vgg19':
+                if val_accuracy > best_val_accuracy:
+                    best_val_accuracy = val_accuracy
+                    best_val_loss = avg_val_loss  # Also track loss
+                    patience_counter = 0
+                    # Save best model
+                    self.save_model(model, model_name, epoch, val_accuracy)
+                else:
+                    patience_counter += 1
             else:
-                patience_counter += 1
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    patience_counter = 0
+                    # Save best model
+                    self.save_model(model, model_name, epoch, val_accuracy)
+                else:
+                    patience_counter += 1
             
             print(f'Epoch {epoch+1}: Train Loss: {avg_train_loss:.4f}, '
                   f'Train Acc: {train_accuracy:.2f}%, '

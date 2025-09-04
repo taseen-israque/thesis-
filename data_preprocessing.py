@@ -397,12 +397,13 @@ class BatchDataLoader:
         """
         print(f"Creating data loaders with batch size: {self.batch_size}")
         
-        # Data augmentation for training
+        # Data augmentation for training - more aggressive for better generalization
         train_transform = transforms.Compose([
-            transforms.RandomRotation(degrees=15),  # Increased rotation
-            transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),  # Added affine transforms
-            # Note: ColorJitter removed for grayscale images - not compatible
-            transforms.RandomHorizontalFlip(p=0.5),  # Added horizontal flip
+            transforms.RandomRotation(degrees=20),  # Increased rotation range
+            transforms.RandomAffine(degrees=0, translate=(0.15, 0.15), scale=(0.85, 1.15)),  # More aggressive transforms
+            transforms.RandomPerspective(distortion_scale=0.2, p=0.3),  # Add perspective distortion
+            transforms.RandomHorizontalFlip(p=0.5),  # Horizontal flip
+            transforms.RandomVerticalFlip(p=0.2),  # Vertical flip (less common for signatures)
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5], std=[0.5])
         ])
