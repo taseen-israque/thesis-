@@ -109,7 +109,7 @@ class SignatureTrainer:
             print(f"Class weights for {model_name}: {class_weights}")
             criterion = nn.CrossEntropyLoss(weight=class_weights)
         else:
-            criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss()
             
         optimizer = optim.Adam(
             model.parameters(), 

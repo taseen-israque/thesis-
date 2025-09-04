@@ -183,7 +183,7 @@ class InceptionV3SignatureVerifier(nn.Module):
         
     def forward(self, x):
         # Remove eval() and torch.no_grad() to allow proper training
-        output = self.inception(x)
+            output = self.inception(x)
         
         if isinstance(output, tuple):
             return output[0]  # Return main output, ignore aux output
